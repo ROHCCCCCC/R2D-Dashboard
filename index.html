@@ -1,0 +1,1210 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadPulse — 자전거도로 노면 스코어 대시보드</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="sample_data.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --surface-page:   #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #2a78d6;
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-serious:  #ec835a;
+    --status-critical: #d03b3b;
+    --status-stationary: #b9b8b2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --surface-page:   #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #3987e5;
+      --status-good:     #0ca30c;
+      --status-warning:  #fab219;
+      --status-serious:  #ec835a;
+      --status-critical: #d03b3b;
+      --status-stationary: #4a4a47;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --surface-page:   #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-1:       #3987e5;
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-serious:  #ec835a;
+    --status-critical: #d03b3b;
+    --status-stationary: #4a4a47;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--surface-page);
+    color: var(--text-primary);
+  }
+  .viz-root { max-width: 1180px; margin: 0 auto; padding: 28px 20px 80px; }
+
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-secondary); font-size: 14px; margin: 0 0 20px; }
+
+  .banner {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--status-warning);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+  }
+  .banner b { color: var(--text-primary); }
+  .banner ul { margin: 8px 0 0; padding-left: 18px; }
+
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 14px;
+    color: var(--text-primary);
+  }
+  .card .caption { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .stat-tile { background: var(--surface-1); padding: 16px 18px; }
+  .stat-tile .label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .stat-tile .value { font-size: 28px; font-weight: 600; line-height: 1; }
+  .stat-tile .value .unit { font-size: 13px; font-weight: 400; color: var(--text-muted); margin-left: 2px; }
+  .stat-tile.status-good .value { color: var(--status-good); }
+  .stat-tile.status-critical .value { color: var(--status-critical); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; }
+  .control { display: flex; flex-direction: column; gap: 6px; min-width: 160px; }
+  .control label { font-size: 12px; color: var(--text-secondary); }
+  .control input[type=range] { width: 100%; }
+  .control input[type=number] {
+    width: 100%; padding: 6px 8px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface-page); color: var(--text-primary);
+    font-size: 13px;
+  }
+  .control .readout { font-size: 12px; color: var(--text-muted); }
+
+  .upload-zone {
+    border: 1.5px dashed var(--baseline);
+    border-radius: 10px;
+    padding: 22px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--series-1); color: var(--text-primary); }
+  .upload-zone input { display: none; }
+  .upload-zone .fmt { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+  /* heatmap strip */
+  .strip-wrap { overflow-x: auto; padding-bottom: 4px; }
+  .strip {
+    display: flex;
+    gap: 2px;
+    min-width: max-content;
+    height: 42px;
+  }
+  .strip .cell {
+    width: 6px;
+    height: 100%;
+    border-radius: 2px;
+    cursor: pointer;
+    position: relative;
+  }
+  .strip .cell.stationary { opacity: .55; }
+  .strip .cell.flag::after {
+    content: "";
+    position: absolute;
+    top: -6px; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--text-primary);
+  }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--text-secondary); }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 2px; }
+
+  .tooltip-box {
+    position: fixed;
+    pointer-events: none;
+    background: var(--text-primary);
+    color: var(--surface-1);
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    line-height: 1.5;
+    z-index: 50;
+    display: none;
+    white-space: nowrap;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--gridline); }
+  th { color: var(--text-secondary); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; padding: 2px 8px; border-radius: 20px;
+    background: var(--surface-page); color: var(--text-primary);
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .toggle-table { font-size: 12px; color: var(--series-1); cursor: pointer; background: none; border: none; padding: 0; margin-top: 10px; }
+
+  .chart-holder { height: 260px; }
+
+  .ribbon3d-holder {
+    position: relative;
+    height: 420px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: linear-gradient(180deg, var(--surface-page), var(--surface-1));
+    border: 1px solid var(--border);
+  }
+  .ribbon3d-holder canvas { display: block; }
+  .ribbon3d-controls {
+    display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+    margin-top: 14px; font-size: 12px; color: var(--text-secondary);
+  }
+  .ribbon3d-controls label { display: flex; align-items: center; gap: 6px; }
+  .ribbon3d-controls input[type=range] { width: 140px; }
+  .ribbon3d-controls button {
+    font-size: 12px; padding: 5px 12px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface-page); color: var(--text-primary);
+    cursor: pointer;
+  }
+  .ribbon3d-hint {
+    position: absolute; left: 10px; bottom: 8px; font-size: 11px;
+    color: var(--text-muted); background: rgba(0,0,0,0.35); color: #fff;
+    padding: 3px 8px; border-radius: 4px; pointer-events: none;
+  }
+
+  #map2d { height: 420px; border-radius: 8px; border: 1px solid var(--border); }
+  .leaflet-tooltip { font-size: 12px; }
+
+  .roadmap-list { font-size: 13px; color: var(--text-secondary); line-height: 1.9; margin: 0; padding-left: 18px; }
+  .roadmap-list b { color: var(--text-primary); }
+</style>
+</head>
+<body>
+<div class="viz-root">
+
+  <h1>RoadPulse — 자전거도로 노면 스코어 대시보드</h1>
+  <p class="subtitle">phyphox 센서 로그 기반 노면 진동 스코어링 (MVP)</p>
+
+  <div class="banner" id="dataNotice"></div>
+
+  <div class="card">
+    <h2>구간 설정</h2>
+    <div class="controls">
+      <div class="control">
+        <label for="speedInput">평균 주행 속도 (km/h) — 1구간(cell) = 10m 환산 기준</label>
+        <input type="number" id="speedInput" min="5" max="40" step="0.5" value="12">
+        <span class="readout" id="windowReadout"></span>
+      </div>
+      <div class="control">
+        <label for="goodInput">100점 기준 각속도 RMS (deg/s, 이하면 100점)</label>
+        <input type="number" id="goodInput" min="0" max="100" step="1" value="15">
+      </div>
+      <div class="control">
+        <label for="badInput">0점 기준 각속도 RMS (deg/s, 이상이면 0점)</label>
+        <input type="number" id="badInput" min="20" max="400" step="5" value="140">
+      </div>
+      <div class="control">
+        <label for="spikeInput">충격(스파이크) 감지 임계값 (deg/s, 순간 최대)</label>
+        <input type="number" id="spikeInput" min="50" max="1000" step="10" value="250">
+      </div>
+      <div class="control">
+        <label for="stationaryInput">정차 판정 임계값 (deg/s, 이하면 정차로 분류)</label>
+        <input type="number" id="stationaryInput" min="0" max="30" step="1" value="8">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>새 라이딩 데이터 불러오기</h2>
+    <div class="upload-zone" id="uploadZone">
+      <div>phyphox CSV / Excel(xlsx·xls) 파일을 여기에 드래그하거나 클릭해서 선택하세요</div>
+      <div class="fmt">지원 형식: Orientation(Time,w,x,y,z) · Gyroscope(Time,gx,gy,gz) · Yaw/Pitch/Roll 컬럼이 있는 CSV, XLSX, XLS. 여러 시트가 있는 통합 문서는 해당 컬럼이 있는 시트를 자동으로 찾습니다. 단, 구형 .xls는 65,536행 한도가 있어 긴 라이딩은 일부만 읽힐 수 있습니다 — 가능하면 CSV나 xlsx를 사용하세요.</div>
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+    </div>
+  </div>
+
+  <div class="stat-row" id="statRow"></div>
+
+  <div class="card">
+    <h2>구간별 노면 상태 (주행 방향 →)</h2>
+    <div class="strip-wrap">
+      <div class="strip" id="strip"></div>
+    </div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="card">
+    <h2>구간(cell)별 스코어 추이</h2>
+    <div class="chart-holder"><canvas id="scoreChart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>실제 지도 위 경로 (임시 좌표)</h2>
+    <p class="caption" style="margin-top:0">
+      실제 GPS 기록이 없어 <b>아주대학교 → 성복역 인근의 자전거 경로(OSRM 자동 계산, 약 5.9km)를 임시 좌표로</b> 빌려와, 측정한 진동 데이터를 순서대로 이 경로 위에 균등하게 배치했습니다.
+      실제 라이딩 경로(구글 지도 캡처 기준 동수원 → 성복, 약 9km, 자전거도로 94%)와 정확히 일치하지 않으니 <b>구간별 위치는 참고용</b>으로만 봐주세요. GPS 로그가 생기면 실제 경로로 교체됩니다.
+    </p>
+    <p class="caption" id="bikelaneCaption"></p>
+    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); margin-bottom:10px;">
+      <input type="checkbox" id="bikelaneToggle" checked> 공식 지정 자전거도로 표시 (경기데이터드림, 수원시)
+    </label>
+    <div id="map2d"></div>
+  </div>
+
+  <div class="card">
+    <h2>3D 진동 지형 (실험적)</h2>
+    <p class="caption" style="margin-top:0" id="route3dCaption">
+      실제 GPS 기록이 없어 <b>아주대학교 → 성복역 인근 구간의 자전거 경로(OSRM 계산, 약 5.9km)를 임시 좌표로</b> 빌려와 리본을 그 곡선 위에 펼쳤습니다.
+      실제 라이딩(구글 지도 캡처 기준 동수원 → 성복, 약 9km, 자전거도로 94%)과는 정확히 일치하지 않으며, 각 지점의 위치는 참고용입니다.
+      높이는 0.3초 단위로 실측한 각속도 RMS 크기입니다. 마우스로 드래그하면 회전, 스크롤로 확대/축소됩니다.
+    </p>
+    <div class="ribbon3d-holder" id="ribbon3d">
+      <div class="ribbon3d-hint">드래그: 회전 · 스크롤: 확대 · 우클릭 드래그: 이동</div>
+    </div>
+    <div class="ribbon3d-controls">
+      <label>높이 과장 배율 <input type="range" id="exagInput" min="0.5" max="4" step="0.1" value="1.5"> <span id="exagReadout">1.5x</span></label>
+      <label><input type="checkbox" id="flyToggle"> 자동 주행 시점</label>
+      <button id="resetCamBtn" type="button">카메라 리셋</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>구간 정밀 스캔 (실험적)</h2>
+    <p class="caption" style="margin-top:0">
+      선택한 구간 하나(약 10m)를 실제 센서 측정 주기(약 100Hz, 초당 100회)로 확대한 <b>1차원 진동 스캔</b>입니다.
+      좌우 폭 정보는 없어서(카메라 없이는 알 수 없음) <b>세로 굴곡만</b> 보여주며, 실제 도로 단면 형상은 아닙니다.
+      색상은 순간값 기준이라 위쪽 구간별 스코어(3초 평균)보다 훨씬 들쭉날쭉하게 보일 수 있습니다 — 그 자체가 실제 짧은 충격(균열·턱 등 후보)이 어디서 발생했는지 보여주는 정보입니다.
+    </p>
+    <div class="ribbon3d-controls" style="margin-top:0; margin-bottom:12px;">
+      <label>구간 선택 <input type="number" id="scanCellInput" min="0" value="0" style="width:70px"></label>
+      <button id="scanWorstBtn" type="button">최저 점수 구간 보기</button>
+      <span class="readout" id="scanCellReadout"></span>
+    </div>
+    <div class="ribbon3d-holder" id="ribbonScan" style="height:280px;">
+      <div class="ribbon3d-hint">드래그: 회전 · 스크롤: 확대</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>가장 낮은 스코어 구간 Top 10</h2>
+    <div id="worstTableWrap"></div>
+    <button class="toggle-table" id="toggleFullTable">전체 구간 표 보기 ▾</button>
+    <div id="fullTableWrap" style="display:none; margin-top:14px; max-height:400px; overflow:auto;"></div>
+  </div>
+
+  <div class="card">
+    <h2>방법론 &amp; 다음 단계</h2>
+    <ul class="roadmap-list">
+      <li><b>지표:</b> phyphox의 방향 센서(quaternion) 또는 자이로스코프 원시값에서 계산한 <b>순간 각속도(deg/s)</b>를 각 구간(cell) 안에서 <b>RMS</b>로 집계 — 노면이 거칠수록 자전거 프레임의 각속도 변화가 커지는 원리를 이용합니다.</li>
+      <li><b>스코어:</b> RMS가 "100점 기준값" 이하면 100점, "0점 기준값" 이상이면 0점, 그 사이는 선형 보간. 기본값은 이번 라이딩 데이터의 분포(중앙값 약 53 deg/s, 90번째 백분위수 약 83 deg/s, 99번째 백분위수 약 138 deg/s)를 참고해 설정했으며, 위 컨트롤에서 직접 조정할 수 있습니다.</li>
+      <li><b>충격 감지:</b> 구간 내 순간 최대 각속도가 임계값을 넘으면 "충격 감지"로 별도 표시 — 균열·단차·맨홀 등 국지적 결함의 후보 지점입니다 (원인 자동 분류는 아직 미구현).</li>
+      <li><b>정차 구간:</b> RMS가 매우 낮은 구간은 "노면이 좋다"가 아니라 신호 대기 등으로 <b>정지해 있었을 가능성</b>이 커서 회색으로 별도 표시하고 평균 계산에서 제외합니다.</li>
+      <li><b>알려진 한계 (이번 라이딩):</b> 이번에 주신 파일은 GPS(Location) 센서가 기록되지 않아 실제 지도 좌표에 구간을 매핑하지 못했습니다. 또한 원본이 구형 .xls로 내보내져 65,536행 한도에 걸려 전체 라이딩(약 46분) 중 앞부분 약 10.9분(652초)만 남아있었습니다.</li>
+      <li><b>다음 라이딩 촬영 시 권장:</b> phyphox에서 <b>Location(GPS)</b>과 <b>Gyroscope(원시, deg/s)</b> 센서를 함께 켜고, 내보내기는 <b>xls 대신 CSV(zip)</b>로 하면 행 제한 없이 정확한 위치 매핑이 가능합니다.</li>
+      <li><b>3D 스캐닝(예정):</b> 자이로 데이터 + 추후 제공하실 도로 사진을 결합해 노면을 3D로 복원하는 기능은 이번 MVP 범위에는 포함하지 않았습니다. 사진/영상 데이터가 준비되면 별도로 설계가 필요합니다.</li>
+    </ul>
+  </div>
+
+</div>
+<div class="tooltip-box" id="tooltipBox"></div>
+
+<script>
+// ---------- config ----------
+let CFG = {
+  speedKmh: 12,
+  goodRms: 15,
+  badRms: 140,
+  spikeThreshold: 250,
+  stationaryRms: 8,
+};
+
+const STATUS = [
+  { key: 'critical',   label: '위험',  min: 0,  max: 25,  color: 'var(--status-critical)' },
+  { key: 'serious',    label: '주의',  min: 25, max: 50,  color: 'var(--status-serious)' },
+  { key: 'warning',    label: '보통',  min: 50, max: 80,  color: 'var(--status-warning)' },
+  { key: 'good',       label: '양호',  min: 80, max: 101, color: 'var(--status-good)' },
+];
+function statusFor(score) {
+  return STATUS.find(s => score >= s.min && score < s.max) || STATUS[STATUS.length - 1];
+}
+function resolveVar(v) {
+  const scope = document.querySelector('.viz-root') || document.documentElement;
+  return getComputedStyle(scope).getPropertyValue(v.slice(4, -1)).trim() || v;
+}
+
+// ---------- scoring ----------
+function scoreFromRms(rms) {
+  const { goodRms, badRms } = CFG;
+  if (rms <= goodRms) return 100;
+  if (rms >= badRms) return 0;
+  return Math.round(100 * (1 - (rms - goodRms) / (badRms - goodRms)));
+}
+
+function buildCellRecords(cells) {
+  // cells: array of [t0, rms, peak]
+  return cells.map(([t0, rms, peak], i) => {
+    const stationary = rms < CFG.stationaryRms;
+    const score = stationary ? null : scoreFromRms(rms);
+    const flagged = peak >= CFG.spikeThreshold;
+    return {
+      idx: i,
+      t0,
+      distM: Math.round((i + 1) * CFG.speedKmh * 1000 / 3600 * SAMPLE_RIDE.windowSec),
+      rms,
+      peak,
+      stationary,
+      score,
+      flagged,
+      status: stationary ? null : statusFor(score),
+    };
+  });
+}
+
+// ---------- CSV parsing for new uploads ----------
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
+  const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const rows = lines.slice(1).map(l => l.split(',').map(Number));
+  return { header, rows };
+}
+
+function findCol(header, needles) {
+  return header.findIndex(h => needles.some(n => h === n || h.startsWith(n)));
+}
+
+function computeAngSpeedSeries(header, rows) {
+  const tCol = findCol(header, ['time']);
+  if (tCol === -1) throw new Error('시간(Time) 컬럼을 찾을 수 없습니다.');
+  const t = rows.map(r => r[tCol]);
+
+  // priority 1: raw gyroscope deg/s or rad/s
+  const gxCol = findCol(header, ['gyroscope x', 'gyro x', 'wx']);
+  const gyCol = findCol(header, ['gyroscope y', 'gyro y', 'wy']);
+  const gzCol = findCol(header, ['gyroscope z', 'gyro z', 'wz']);
+  if (gxCol !== -1 && gyCol !== -1 && gzCol !== -1) {
+    const isRad = header[gxCol].includes('rad');
+    const k = isRad ? 180 / Math.PI : 1;
+    const speed = rows.map(r => Math.sqrt(r[gxCol]**2 + r[gyCol]**2 + r[gzCol]**2) * k);
+    return { t: t.slice(1), speed: speed.slice(1) };
+  }
+
+  // priority 2: quaternion w,x,y,z
+  const wCol = findCol(header, ['w']);
+  const xCol = findCol(header, ['x']);
+  const yCol = findCol(header, ['y']);
+  const zCol = findCol(header, ['z']);
+  if (wCol !== -1 && xCol !== -1 && yCol !== -1 && zCol !== -1) {
+    const speed = [];
+    const tOut = [];
+    for (let i = 0; i < rows.length - 1; i++) {
+      const w1 = rows[i][wCol], x1 = rows[i][xCol], y1 = rows[i][yCol], z1 = rows[i][zCol];
+      const w2 = rows[i+1][wCol], x2 = rows[i+1][xCol], y2 = rows[i+1][yCol], z2 = rows[i+1][zCol];
+      const dot = Math.min(1, Math.abs(w1*w2 + x1*x2 + y1*y2 + z1*z2));
+      const angleDeg = 2 * Math.acos(dot) * 180 / Math.PI;
+      const dt = (t[i+1] - t[i]) || 0.01;
+      speed.push(angleDeg / dt);
+      tOut.push(t[i]);
+    }
+    return { t: tOut, speed };
+  }
+
+  // priority 3: yaw/pitch/roll euler
+  const yawCol = findCol(header, ['yaw']);
+  const pitchCol = findCol(header, ['pitch']);
+  const rollCol = findCol(header, ['roll']);
+  if (yawCol !== -1 && pitchCol !== -1 && rollCol !== -1) {
+    const unwrap = (a, b) => { let d = b - a; while (d > 180) d -= 360; while (d < -180) d += 360; return d; };
+    const speed = [];
+    const tOut = [];
+    for (let i = 0; i < rows.length - 1; i++) {
+      const dt = (t[i+1] - t[i]) || 0.01;
+      const dy = unwrap(rows[i][yawCol], rows[i+1][yawCol]);
+      const dp = unwrap(rows[i][pitchCol], rows[i+1][pitchCol]);
+      const dr = unwrap(rows[i][rollCol], rows[i+1][rollCol]);
+      speed.push(Math.sqrt(dy*dy + dp*dp + dr*dr) / dt);
+      tOut.push(t[i]);
+    }
+    return { t: tOut, speed };
+  }
+
+  throw new Error('인식 가능한 센서 컬럼이 없습니다 (Gyroscope, Orientation quaternion, Yaw/Pitch/Roll 중 하나 필요).');
+}
+
+function bucketIntoCells(t, speed, windowSec) {
+  const cells = [];
+  let curStart = t[0];
+  let vals = [];
+  for (let i = 0; i < speed.length; i++) {
+    if (t[i] - curStart >= windowSec && vals.length) {
+      cells.push(aggregate(vals));
+      curStart = t[i];
+      vals = [];
+    }
+    vals.push(speed[i]);
+  }
+  if (vals.length) cells.push(aggregate(vals));
+  return cells;
+
+  function aggregate(vals) {
+    const sq = vals.reduce((s, v) => s + v * v, 0);
+    const rms = Math.sqrt(sq / vals.length);
+    const peak = Math.max(...vals);
+    return [Math.round(curStart * 100) / 100, Math.round(rms * 100) / 100, Math.round(peak * 100) / 100];
+  }
+}
+
+// ---------- rendering ----------
+let currentRecords = [];
+let chartInstance = null;
+
+function render(records, meta) {
+  currentRecords = records;
+  renderNotice(meta);
+  renderStats(records);
+  renderStrip(records);
+  renderChart(records);
+  renderTables(records);
+  try { renderMap(records); } catch (err) { console.error('renderMap failed:', err); }
+  if (window.RoadPulse3D) window.RoadPulse3D.update(window.getFineSeries(), CFG.speedKmh);
+  selectWorstScanCell();
+}
+
+function selectWorstScanCell() {
+  const moving = currentRecords.filter(r => !r.stationary);
+  if (!moving.length) return;
+  const worst = moving.reduce((a, b) => (b.score < a.score ? b : a));
+  loadScanCell(worst.idx);
+}
+
+// ---------- 2D map (placeholder route) ----------
+let leafletMap = null, leafletLayer = null, bikeLaneLayer = null;
+function initLeafletMap() {
+  if (leafletMap || typeof L === 'undefined') return;
+  leafletMap = L.map('map2d');
+  const start = SAMPLE_RIDE.placeholderRoute[0]; // [lon, lat] -- must set a view before adding any layer, or Leaflet throws "Set map center and zoom first."
+  leafletMap.setView([start[1], start[0]], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors',
+  }).addTo(leafletMap);
+  renderBikeLaneLayer();
+}
+
+function renderBikeLaneLayer() {
+  if (typeof PUBLIC_BIKELANES_SUWON === 'undefined' || !leafletMap) return;
+  bikeLaneLayer = L.layerGroup();
+  for (const seg of PUBLIC_BIKELANES_SUWON) {
+    const [name, lat1, lon1, lat2, lon2, lengthKm, widthM, type] = seg;
+    const line = L.polyline([[lat1, lon1], [lat2, lon2]], {
+      color: '#6da7ec', weight: 3, opacity: 0.55, dashArray: '4 4',
+    });
+    line.bindTooltip(`${name}<br>${type} · 폭 ${widthM || '?'}m · ${lengthKm}km`, { sticky: true });
+    bikeLaneLayer.addLayer(line);
+  }
+  const toggle = document.getElementById('bikelaneToggle');
+  if (!toggle || toggle.checked) bikeLaneLayer.addTo(leafletMap);
+
+  const capEl = document.getElementById('bikelaneCaption');
+  if (capEl && typeof PUBLIC_BIKELANE_META !== 'undefined') {
+    const m = PUBLIC_BIKELANE_META;
+    capEl.innerHTML = `<b>공공데이터(경기데이터드림) 실제 지정 자전거도로:</b> ${m.suwon.name} ${m.suwon.mappedSegments}개 구간 표시 중 (전체 ${m.suwon.totalRoutes}개 노선, 총 ${m.suwon.totalKm}km 중 좌표 있는 구간만) · ${m.yongin.name}은 ${m.yongin.totalRoutes}개 노선(총 ${m.yongin.totalKm}km)이 등록돼 있지만 ${m.yongin.note}.`;
+  }
+}
+
+document.getElementById('bikelaneToggle').addEventListener('change', (e) => {
+  if (!leafletMap || !bikeLaneLayer) return;
+  if (e.target.checked) bikeLaneLayer.addTo(leafletMap);
+  else leafletMap.removeLayer(bikeLaneLayer);
+});
+
+function renderMap(records) {
+  if (typeof L === 'undefined' || !records.length) return;
+  initLeafletMap();
+  const path = window.getRoutePath(records.length);
+  const routeTotalM = (window.SAMPLE_RIDE.placeholderRouteMeta && window.SAMPLE_RIDE.placeholderRouteMeta.distanceM) || 0;
+  if (leafletLayer) leafletMap.removeLayer(leafletLayer);
+  const group = L.layerGroup();
+  for (let i = 0; i < path.length - 1; i++) {
+    const r = records[i];
+    const routeDistM = Math.round(i / (path.length - 1) * routeTotalM);
+    const color = r.stationary ? resolveVar('var(--status-stationary)') : resolveVar(r.status.color);
+    const seg = L.polyline(
+      [[path[i].lat, path[i].lon], [path[i + 1].lat, path[i + 1].lon]],
+      { color, weight: 5, opacity: 0.9 }
+    );
+    seg.bindTooltip(
+      `구간 #${r.idx} · 경로상 약 ${routeDistM}m 지점<br>${r.stationary ? '정차 구간' : `스코어 ${r.score}점 (${r.status.label})`}${r.flagged ? '<br>⚠ 충격 감지' : ''}`,
+      { sticky: true }
+    );
+    group.addLayer(seg);
+  }
+  group.addTo(leafletMap);
+  leafletLayer = group;
+  leafletMap.fitBounds(L.latLngBounds(path.map(p => [p.lat, p.lon])), { padding: [20, 20] });
+}
+
+function renderNotice(meta) {
+  const el = document.getElementById('dataNotice');
+  el.innerHTML = `
+    <b>${meta.title}</b> — ${meta.desc}
+    <ul>
+      <li>GPS 좌표가 없어 실제 지도 위 10m 그리드가 아닌, <b>주행 순서 기반 가상 구간(cell)</b>으로 표시합니다. 구간 폭은 평균 속도 설정값을 기준으로 시간을 거리로 환산한 값입니다.</li>
+      <li>사진 2장은 실제 노면 사진이 아닌 구글 지도 경로 캡처였어서 이번 점수화에는 사용하지 않았습니다.</li>
+    </ul>`;
+}
+
+function fmtNum(n, d = 0) { return n === null || n === undefined ? '—' : n.toFixed(d); }
+
+function renderStats(records) {
+  const moving = records.filter(r => !r.stationary);
+  const avg = moving.length ? moving.reduce((s, r) => s + r.score, 0) / moving.length : null;
+  const worst = moving.length ? Math.min(...moving.map(r => r.score)) : null;
+  const critCount = moving.filter(r => r.status && r.status.key === 'critical').length;
+  const flagCount = records.filter(r => r.flagged).length;
+  const totalDist = records.length ? records[records.length - 1].distM : 0;
+  const totalCells = records.length;
+
+  const tiles = [
+    { label: '평균 노면 스코어', value: fmtNum(avg, 0), unit: '점', cls: '' },
+    { label: '최저 스코어 구간', value: fmtNum(worst, 0), unit: '점', cls: 'status-critical' },
+    { label: '위험 구간 (score<25)', value: critCount, unit: `/ ${moving.length}`, cls: '' },
+    { label: '충격 감지 지점', value: flagCount, unit: '건', cls: '' },
+    { label: '측정 거리(추정)', value: (totalDist/1000).toFixed(2), unit: 'km', cls: '' },
+    { label: '분석 구간 수', value: totalCells, unit: '개', cls: '' },
+  ];
+  document.getElementById('statRow').innerHTML = tiles.map(t => `
+    <div class="stat-tile ${t.cls}">
+      <div class="label">${t.label}</div>
+      <div class="value">${t.value}<span class="unit">${t.unit}</span></div>
+    </div>`).join('');
+}
+
+function renderStrip(records) {
+  const strip = document.getElementById('strip');
+  const tooltip = document.getElementById('tooltipBox');
+  strip.innerHTML = records.map(r => {
+    const color = r.stationary ? 'var(--status-stationary)' : r.status.color;
+    return `<div class="cell ${r.stationary ? 'stationary' : ''} ${r.flagged ? 'flag' : ''}"
+      style="background:${color}" data-idx="${r.idx}"></div>`;
+  }).join('');
+
+  strip.querySelectorAll('.cell').forEach(el => {
+    el.addEventListener('mousemove', (e) => {
+      const r = records[+el.dataset.idx];
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 14) + 'px';
+      tooltip.style.top = (e.clientY + 14) + 'px';
+      tooltip.innerHTML = `구간 #${r.idx} · ${r.distM}m 지점<br>
+        RMS ${fmtNum(r.rms,1)} deg/s · 최대 ${fmtNum(r.peak,1)} deg/s<br>
+        ${r.stationary ? '정차 구간 (평가 제외)' : `스코어 ${r.score}점 (${r.status.label})`}
+        ${r.flagged ? '<br><b>⚠ 충격 감지</b>' : ''}`;
+    });
+    el.addEventListener('mouseleave', () => tooltip.style.display = 'none');
+  });
+
+  document.getElementById('legend').innerHTML = [
+    ...STATUS.slice().reverse().map(s => `<div class="item"><span class="swatch" style="background:${s.color}"></span>${s.label} (${s.min}–${s.max === 101 ? 100 : s.max}점)</div>`),
+    `<div class="item"><span class="swatch" style="background:var(--status-stationary)"></span>정차/저속 (평가 제외)</div>`,
+    `<div class="item">● 충격 감지 지점</div>`,
+  ].join('');
+}
+
+function renderChart(records) {
+  const ctx = document.getElementById('scoreChart');
+  const labels = records.map(r => r.distM + 'm');
+  const data = records.map(r => r.stationary ? 0 : r.score);
+  const colors = records.map(r => r.stationary ? resolveVar('var(--status-stationary)') : resolveVar(r.status.color));
+
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 2, barPercentage: 1.0, categoryPercentage: 1.0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => `${records[items[0].dataIndex].distM}m 지점 (구간 #${items[0].dataIndex})`,
+            label: (item) => {
+              const r = records[item.dataIndex];
+              return r.stationary ? '정차 구간' : `스코어 ${r.score}점 · RMS ${fmtNum(r.rms,1)} deg/s`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { maxTicksLimit: 12, color: resolveVar('var(--text-muted)') }, grid: { display: false } },
+        y: { min: 0, max: 100, ticks: { stepSize: 25, color: resolveVar('var(--text-muted)') }, grid: { color: resolveVar('var(--gridline)') } },
+      }
+    }
+  });
+}
+
+function badgeHtml(r) {
+  if (r.stationary) return `<span class="badge"><span class="dot" style="background:var(--status-stationary)"></span>정차</span>`;
+  return `<span class="badge"><span class="dot" style="background:${r.status.color}"></span>${r.status.label}</span>`;
+}
+
+function renderTables(records) {
+  const moving = records.filter(r => !r.stationary).sort((a, b) => a.score - b.score);
+  const worst = moving.slice(0, 10);
+
+  const rowHtml = (r) => `
+    <tr style="cursor:pointer" title="클릭하면 이 구간을 정밀 스캔에서 봅니다" onclick="loadScanCell(${r.idx}); document.getElementById('ribbonScan').scrollIntoView({behavior:'smooth', block:'center'});">
+      <td>#${r.idx}</td>
+      <td class="num">${r.distM}m</td>
+      <td class="num">${fmtNum(r.t0,1)}s</td>
+      <td class="num">${fmtNum(r.rms,1)}</td>
+      <td class="num">${fmtNum(r.peak,1)}</td>
+      <td class="num">${r.score ?? '—'}</td>
+      <td>${badgeHtml(r)}</td>
+      <td>${r.flagged ? '⚠ 감지' : ''}</td>
+    </tr>`;
+
+  const headHtml = `<tr>
+      <th>구간</th><th class="num">거리</th><th class="num">시간</th>
+      <th class="num">RMS(deg/s)</th><th class="num">최대(deg/s)</th>
+      <th class="num">스코어</th><th>등급</th><th>충격</th>
+    </tr>`;
+
+  document.getElementById('worstTableWrap').innerHTML =
+    `<table><thead>${headHtml}</thead><tbody>${worst.map(rowHtml).join('')}</tbody></table>`;
+  document.getElementById('fullTableWrap').innerHTML =
+    `<table><thead>${headHtml}</thead><tbody>${records.map(rowHtml).join('')}</tbody></table>`;
+}
+
+document.getElementById('toggleFullTable').addEventListener('click', (e) => {
+  const wrap = document.getElementById('fullTableWrap');
+  const open = wrap.style.display !== 'none';
+  wrap.style.display = open ? 'none' : 'block';
+  e.target.textContent = open ? '전체 구간 표 보기 ▾' : '전체 구간 표 닫기 ▴';
+});
+
+// ---------- data sources ----------
+let rawSeries = null; // {t, speed} for uploaded files, enables live rebucketing
+
+function loadSample() {
+  rawSeries = null;
+  window.currentWindowSec = SAMPLE_RIDE.windowSec;
+  const records = buildCellRecords(SAMPLE_RIDE.cells);
+  render(records, {
+    title: '샘플 데이터 표시 중',
+    desc: `2026-07-16 새벽 라이딩(phyphox Orientation 로그, ${SAMPLE_RIDE.windowSec}초 고정 구간). 아래 컨트롤의 평균 속도 값은 거리 표시에만 반영되며, 구간 개수는 재계산되지 않습니다.`
+  });
+}
+
+function cleanHeaderCell(h) {
+  // strip control/null bytes some legacy .xls writers leave behind, then normalize
+  var s = String(h == null ? '' : h);
+  var out = '';
+  for (var i = 0; i < s.length; i++) {
+    var code = s.charCodeAt(i);
+    if (code >= 32 && code !== 127) out += s[i];
+  }
+  return out.trim().toLowerCase();
+}
+function pickBestSheet(workbook) {
+  let best = null, bestRowCount = -1;
+  const debugInfo = [];
+  for (const name of workbook.SheetNames) {
+    const ws = workbook.Sheets[name];
+    if (!ws || !ws['!ref']) { debugInfo.push(`${name}: (empty)`); continue; }
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const rowCount = range.e.r - range.s.r + 1;
+    if (rowCount < 2) { debugInfo.push(`${name}: rows=${rowCount}`); continue; }
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, blankrows: false });
+    if (!aoa.length) { debugInfo.push(`${name}: rows=${rowCount} (no data read)`); continue; }
+    const header = aoa[0].map(cleanHeaderCell);
+    debugInfo.push(`${name}: rows=${rowCount} cols=[${header.join(', ')}]`);
+    if (rowCount < 3) continue;
+    const hasTime = findCol(header, ['time']) !== -1;
+    const hasGyro = findCol(header, ['gyroscope x', 'gyro x', 'wx']) !== -1;
+    const hasQuat = ['w', 'x', 'y', 'z'].every(k => findCol(header, [k]) !== -1);
+    const hasEuler = ['yaw', 'pitch', 'roll'].every(k => findCol(header, [k]) !== -1);
+    if (hasTime && (hasGyro || hasQuat || hasEuler) && rowCount > bestRowCount) {
+      bestRowCount = rowCount;
+      const rows = aoa.slice(1).map(r => header.map((_, i) => Number(r[i])));
+      best = { name, header, rows };
+    }
+  }
+  if (!best) console.log('[RoadPulse] sheet scan (no match):', debugInfo.join(' | '));
+  best = best || null;
+  if (!best) pickBestSheet.lastDebug = debugInfo;
+  return best;
+}
+
+function loadUploaded(file) {
+  const lower = file.name.toLowerCase();
+  const isExcel = lower.endsWith('.xlsx') || lower.endsWith('.xls');
+
+  if (isExcel) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        if (typeof XLSX === 'undefined') throw new Error('엑셀 파서(XLSX 라이브러리)를 불러오지 못했습니다. 인터넷 연결을 확인해주세요.');
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const picked = pickBestSheet(wb);
+        if (!picked) {
+          const debug = (pickBestSheet.lastDebug || []).join('\n');
+          throw new Error('시트 중에 Time + Gyroscope/Orientation(quaternion)/Yaw-Pitch-Roll 컬럼을 가진 시트를 찾지 못했습니다.\n\n[감지된 시트]\n' + debug);
+        }
+        const { t, speed } = computeAngSpeedSeries(picked.header, picked.rows);
+        rawSeries = { t, speed };
+        recomputeFromRaw();
+      } catch (err) {
+        alert('파일을 처리할 수 없습니다: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const { header, rows } = parseCSV(e.target.result);
+      const { t, speed } = computeAngSpeedSeries(header, rows);
+      rawSeries = { t, speed };
+      recomputeFromRaw();
+    } catch (err) {
+      alert('파일을 처리할 수 없습니다: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function recomputeFromRaw() {
+  if (!rawSeries) return;
+  const windowSec = 36 / CFG.speedKmh; // 10m worth of time at avg speed
+  window.currentWindowSec = windowSec;
+  const cells = bucketIntoCells(rawSeries.t, rawSeries.speed, windowSec);
+  const records = buildCellRecordsGeneric(cells, windowSec);
+  render(records, {
+    title: '업로드한 데이터 표시 중',
+    desc: `구간 폭 ${windowSec.toFixed(1)}초 (평균 ${CFG.speedKmh}km/h 기준 약 10m)로 재계산했습니다.`
+  });
+}
+
+function buildCellRecordsGeneric(cells, windowSec) {
+  return cells.map(([t0, rms, peak], i) => {
+    const stationary = rms < CFG.stationaryRms;
+    const score = stationary ? null : scoreFromRms(rms);
+    const flagged = peak >= CFG.spikeThreshold;
+    return {
+      idx: i,
+      t0,
+      distM: Math.round((i + 1) * CFG.speedKmh * 1000 / 3600 * windowSec),
+      rms, peak, stationary, score, flagged,
+      status: stationary ? null : statusFor(score),
+    };
+  });
+}
+
+// ---------- controls wiring ----------
+function bindControl(id, key, isFloat = true) {
+  document.getElementById(id).addEventListener('change', (e) => {
+    CFG[key] = isFloat ? parseFloat(e.target.value) : parseInt(e.target.value, 10);
+    refreshCurrent();
+  });
+}
+bindControl('speedInput', 'speedKmh');
+bindControl('goodInput', 'goodRms');
+bindControl('badInput', 'badRms');
+bindControl('spikeInput', 'spikeThreshold');
+bindControl('stationaryInput', 'stationaryRms');
+
+function refreshCurrent() {
+  document.getElementById('windowReadout').textContent =
+    `현재 1구간 ≈ ${(36 / CFG.speedKmh).toFixed(1)}초 분량`;
+  if (rawSeries) recomputeFromRaw();
+  else loadSample();
+}
+
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+uploadZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => { if (e.target.files[0]) loadUploaded(e.target.files[0]); });
+['dragover', 'dragleave', 'drop'].forEach(evt => {
+  uploadZone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    uploadZone.classList.toggle('drag', evt === 'dragover');
+    if (evt === 'drop' && e.dataTransfer.files[0]) loadUploaded(e.dataTransfer.files[0]);
+  });
+});
+
+// ---------- placeholder route: project lat/lon onto local meters, resample to N points ----------
+function projectRoute(coords) {
+  const lat0 = coords[0][1], lon0 = coords[0][0];
+  const mPerDegLat = 111320;
+  const mPerDegLon = 111320 * Math.cos(lat0 * Math.PI / 180);
+  return coords.map(([lon, lat]) => ({
+    x: (lon - lon0) * mPerDegLon,
+    z: (lat - lat0) * mPerDegLat,
+    lat, lon,
+  }));
+}
+
+function resamplePath(points, n) {
+  if (points.length < 2 || n < 2) return points;
+  const cum = [0];
+  for (let i = 1; i < points.length; i++) {
+    cum.push(cum[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z));
+  }
+  const total = cum[cum.length - 1];
+  const out = [];
+  let seg = 0;
+  for (let k = 0; k < n; k++) {
+    const target = total * k / (n - 1);
+    while (seg < cum.length - 2 && cum[seg + 1] < target) seg++;
+    const segLen = cum[seg + 1] - cum[seg];
+    const t = segLen > 0 ? (target - cum[seg]) / segLen : 0;
+    const p0 = points[seg], p1 = points[seg + 1];
+    out.push({
+      x: p0.x + (p1.x - p0.x) * t,
+      z: p0.z + (p1.z - p0.z) * t,
+      lat: p0.lat + (p1.lat - p0.lat) * t,
+      lon: p0.lon + (p1.lon - p0.lon) * t,
+    });
+  }
+  return out;
+}
+
+// ---------- exports for the 3D module (modules can't see classic-script let/const) ----------
+window.CFG = CFG;
+window.SAMPLE_RIDE = SAMPLE_RIDE;
+window.scoreFromRms = scoreFromRms;
+window.getFineSeries = function () {
+  if (rawSeries) {
+    const cells = bucketIntoCells(rawSeries.t, rawSeries.speed, SAMPLE_RIDE.fineWindowSec || 0.3);
+    return cells.map(c => c[1]); // rms component
+  }
+  return SAMPLE_RIDE.fine;
+};
+window.getRoutePath = function (n) {
+  return resamplePath(projectRoute(SAMPLE_RIDE.placeholderRoute), n);
+};
+
+// ---------- full-resolution (real sensor rate) series, for the segment scan ----------
+window.getFullResSeries = function () {
+  if (rawSeries) return rawSeries; // already full-resolution {t, speed}
+  const dt = SAMPLE_RIDE.raw100hzDt || 0.00995;
+  const speed = SAMPLE_RIDE.raw100hz || [];
+  const t = speed.map((_, i) => i * dt);
+  return { t, speed };
+};
+
+window.getCellFullResSlice = function (cellIdx) {
+  const r = currentRecords[cellIdx];
+  if (!r) return null;
+  const windowSec = window.currentWindowSec || 3.0;
+  const { t, speed } = window.getFullResSeries();
+  const t0 = r.t0, t1 = r.t0 + windowSec;
+  const out = [];
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] >= t0 && t[i] < t1) out.push(speed[i]);
+  }
+  return out;
+};
+
+function updateScanReadout(cellIdx) {
+  const r = currentRecords[cellIdx];
+  const el = document.getElementById('scanCellReadout');
+  if (!el) return;
+  if (!r) { el.textContent = '유효하지 않은 구간 번호입니다.'; return; }
+  el.textContent = r.stationary
+    ? `#${cellIdx} · ${r.distM}m 지점 · 정차 구간`
+    : `#${cellIdx} · ${r.distM}m 지점 · 스코어 ${r.score}점 (${r.status.label}) · RMS ${fmtNum(r.rms,1)} deg/s`;
+}
+
+function loadScanCell(cellIdx) {
+  cellIdx = Math.max(0, Math.min(currentRecords.length - 1, cellIdx));
+  document.getElementById('scanCellInput').value = cellIdx;
+  updateScanReadout(cellIdx);
+  if (window.RoadPulseScan) window.RoadPulseScan.showCell(cellIdx);
+}
+
+document.getElementById('scanCellInput').addEventListener('change', (e) => {
+  loadScanCell(parseInt(e.target.value, 10) || 0);
+});
+document.getElementById('scanWorstBtn').addEventListener('click', selectWorstScanCell);
+
+// ---------- init ----------
+refreshCurrent();
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const STATUS_HEX = { critical: '#d03b3b', serious: '#ec835a', warning: '#fab219', good: '#0ca30c', stationary: '#9a9a94' };
+
+function colorForRms(rms) {
+  const cfg = window.CFG;
+  if (rms < cfg.stationaryRms) return STATUS_HEX.stationary;
+  const score = window.scoreFromRms(rms);
+  if (score < 25) return STATUS_HEX.critical;
+  if (score < 50) return STATUS_HEX.serious;
+  if (score < 80) return STATUS_HEX.warning;
+  return STATUS_HEX.good;
+}
+
+// A self-contained ribbon viewer instance. `opts.useRoute` drapes the ribbon over the
+// placeholder real-road path; `opts.fixedTotalLengthM` (used when useRoute is false)
+// forces the ribbon to span an exact real-world length regardless of point count —
+// used by the single-cell scan, which always represents one ~10m segment.
+function createRibbonViewer(container, opts = {}) {
+  const { useRoute = false, fixedTotalLengthM = null, flyEnabled = true } = opts;
+  let scene, camera, renderer, controls, ribbonMesh;
+  let flying = false, flyIdx = 0, pathLength = 0;
+  let centerline = [];
+
+  function initScene() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.1, 5000);
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    dir.position.set(10, 30, 10);
+    scene.add(dir);
+
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    requestAnimationFrame(animate);
+  }
+
+  function buildRibbon(fineArr, speedKmh) {
+    if (ribbonMesh) {
+      scene.remove(ribbonMesh);
+      ribbonMesh.geometry.dispose();
+      ribbonMesh.material.dispose();
+    }
+    const exagEl = document.getElementById('exagInput');
+    const exaggeration = parseFloat((exagEl && exagEl.value) || '1.5');
+    const width = 4;
+    const capRms = window.CFG.badRms;
+    const maxHeight = 3;
+
+    const n = fineArr.length;
+    const routePts = useRoute && typeof window.getRoutePath === 'function' ? window.getRoutePath(n) : null;
+    let spacing;
+    if (fixedTotalLengthM != null) {
+      spacing = n > 1 ? fixedTotalLengthM / (n - 1) : fixedTotalLengthM;
+    } else {
+      const fineWindowSec = window.SAMPLE_RIDE.fineWindowSec || 0.3;
+      spacing = Math.max(0.2, speedKmh * 1000 / 3600 * fineWindowSec);
+    }
+
+    centerline = new Array(n);
+    for (let i = 0; i < n; i++) {
+      centerline[i] = routePts ? { x: routePts[i].x, z: routePts[i].z } : { x: 0, z: i * spacing };
+    }
+
+    const positions = new Float32Array(n * 2 * 3);
+    const colors = new Float32Array(n * 2 * 3);
+    const indices = [];
+
+    for (let i = 0; i < n; i++) {
+      const rms = fineArr[i];
+      const h = Math.min(rms, capRms) / capRms * maxHeight * exaggeration;
+      const c = new THREE.Color(colorForRms(rms));
+
+      const prev = centerline[Math.max(0, i - 1)];
+      const next = centerline[Math.min(n - 1, i + 1)];
+      let tx = next.x - prev.x, tz = next.z - prev.z;
+      const tlen = Math.hypot(tx, tz) || 1;
+      tx /= tlen; tz /= tlen;
+      const nx = -tz, nz = tx;
+
+      const cx = centerline[i].x, cz = centerline[i].z;
+      const leftX = cx - nx * width / 2, leftZ = cz - nz * width / 2;
+      const rightX = cx + nx * width / 2, rightZ = cz + nz * width / 2;
+
+      positions[i * 6 + 0] = leftX; positions[i * 6 + 1] = h; positions[i * 6 + 2] = leftZ;
+      positions[i * 6 + 3] = rightX; positions[i * 6 + 4] = h; positions[i * 6 + 5] = rightZ;
+      colors[i * 6 + 0] = c.r; colors[i * 6 + 1] = c.g; colors[i * 6 + 2] = c.b;
+      colors[i * 6 + 3] = c.r; colors[i * 6 + 4] = c.g; colors[i * 6 + 5] = c.b;
+
+      if (i < n - 1) {
+        const a = i * 2, b = i * 2 + 1, cN = (i + 1) * 2, d = (i + 1) * 2 + 1;
+        indices.push(a, cN, b, b, cN, d);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85, metalness: 0.05 });
+    ribbonMesh = new THREE.Mesh(geo, mat);
+    scene.add(ribbonMesh);
+
+    let len = 0;
+    for (let i = 1; i < n; i++) len += Math.hypot(centerline[i].x - centerline[i - 1].x, centerline[i].z - centerline[i - 1].z);
+    pathLength = len;
+    flyIdx = 0;
+    return pathLength;
+  }
+
+  function resetCamera() {
+    if (!centerline.length) { camera.position.set(0, 14, -18); controls.target.set(0, 0, 0); }
+    else if (fixedTotalLengthM != null) {
+      // close-up framing for the short single-segment scan
+      const mid = centerline[Math.floor(centerline.length / 2)];
+      camera.position.set(mid.x - 6, 5, mid.z - 2);
+      controls.target.set(mid.x, 0.5, mid.z);
+    } else {
+      const start = centerline[0];
+      const mid = centerline[Math.floor(centerline.length * 0.15)];
+      camera.position.set(start.x, 16, start.z - 16);
+      controls.target.set(mid.x, 0, mid.z);
+    }
+    camera.lookAt(controls.target);
+    controls.update();
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    if (flying && centerline.length > 1) {
+      const n = centerline.length;
+      flyIdx += Math.max(1, Math.round(n / 500));
+      if (flyIdx >= n - 2) flyIdx = 0;
+      const p = centerline[flyIdx];
+      const look = centerline[Math.min(n - 1, flyIdx + Math.max(2, Math.round(n / 80)))];
+      camera.position.set(p.x, 2.2, p.z);
+      controls.target.set(look.x, 1, look.z);
+      camera.lookAt(controls.target);
+    }
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  initScene();
+
+  return {
+    update(fineArr, speedKmh) {
+      if (!fineArr || fineArr.length < 2) return false;
+      buildRibbon(fineArr, speedKmh);
+      if (!flying) resetCamera();
+      return true;
+    },
+    setFlying(v) {
+      if (!flyEnabled) return;
+      flying = v;
+      if (!v) resetCamera();
+    },
+    resetCamera,
+  };
+}
+
+const mainViewer = createRibbonViewer(document.getElementById('ribbon3d'), { useRoute: true });
+window.RoadPulse3D = mainViewer;
+mainViewer.update(window.getFineSeries(), window.CFG.speedKmh);
+
+const exagInput = document.getElementById('exagInput');
+const exagReadout = document.getElementById('exagReadout');
+exagInput.addEventListener('input', () => {
+  exagReadout.textContent = parseFloat(exagInput.value).toFixed(1) + 'x';
+  mainViewer.update(window.getFineSeries(), window.CFG.speedKmh);
+  if (window.RoadPulseScan) window.RoadPulseScan.refresh();
+});
+
+document.getElementById('flyToggle').addEventListener('change', (e) => mainViewer.setFlying(e.target.checked));
+document.getElementById('resetCamBtn').addEventListener('click', mainViewer.resetCamera);
+
+// ---------- single-cell precision scan ----------
+const scanViewer = createRibbonViewer(document.getElementById('ribbonScan'), {
+  useRoute: false, fixedTotalLengthM: 10, flyEnabled: false,
+});
+let lastScanCell = 0;
+window.RoadPulseScan = {
+  showCell(cellIdx) {
+    lastScanCell = cellIdx;
+    const slice = window.getCellFullResSlice(cellIdx);
+    return scanViewer.update(slice, 0);
+  },
+  refresh() { window.RoadPulseScan.showCell(lastScanCell); },
+};
+const initialScanCell = parseInt((document.getElementById('scanCellInput') || {}).value || '0', 10);
+window.RoadPulseScan.showCell(initialScanCell);
+</script>
+</body>
+</html>
