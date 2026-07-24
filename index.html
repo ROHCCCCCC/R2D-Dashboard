@@ -799,28 +799,63 @@ function pickBestSheet(workbook) {
   return best;
 }
 
+const LEGACY_XLS_HINT =
+  '\n\n구형 .xls 형식은 (1) 브라우저 메모리에서 파싱하다 큰 파일에서 자주 실패하고, ' +
+  '(2) 65,536행 제한이 있어 긴 라이딩은 앞부분만 담깁니다.\n' +
+  '해결: phyphox에서 "CSV (zip)"로 다시 내보내 개별 CSV(예: Gyroscope.csv)를 올리거나, ' +
+  'Excel에서 열어 .xlsx로 저장한 뒤 올려주세요.';
+
+function reportUploadError(err, file) {
+  console.error('[RoadPulse] upload failed:', err, err && err.stack);
+  const where = err && err.stack ? '\n\n[위치] ' + String(err.stack).split('\n')[1] : '';
+  const sizeMB = file ? (file.size / 1048576).toFixed(1) : '?';
+  const isLegacyXls = file && file.name.toLowerCase().endsWith('.xls');
+  const msg = (err && err.message) || String(err);
+  const isArrayErr = /array length|out of memory|allocation|Maximum call/i.test(msg);
+  let advice = '';
+  if (isLegacyXls && (isArrayErr || file.size > 40 * 1048576)) advice = LEGACY_XLS_HINT;
+  alert(`파일을 처리할 수 없습니다: ${msg}\n(파일: ${file ? file.name : '?'}, ${sizeMB}MB)${advice}${where}`);
+}
+
 function loadUploaded(file) {
   const lower = file.name.toLowerCase();
   const isExcel = lower.endsWith('.xlsx') || lower.endsWith('.xls');
+
+  // Legacy .xls over ~40MB reliably blows up the in-browser parser. Warn up front.
+  if (lower.endsWith('.xls') && file.size > 40 * 1048576) {
+    const proceed = confirm(
+      `이 파일은 구형 .xls 형식이고 ${(file.size / 1048576).toFixed(0)}MB로 큽니다.\n` +
+      `브라우저에서 파싱하다 실패할 가능성이 높고, .xls는 65,536행 제한 때문에 긴 라이딩은 앞부분만 담깁니다.\n\n` +
+      `그래도 시도할까요?\n(권장: phyphox에서 CSV(zip)로 내보내거나 Excel에서 .xlsx로 저장 후 업로드)`
+    );
+    if (!proceed) return;
+  }
 
   if (isExcel) {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         if (typeof XLSX === 'undefined') throw new Error('엑셀 파서(XLSX 라이브러리)를 불러오지 못했습니다. 인터넷 연결을 확인해주세요.');
-        const wb = XLSX.read(e.target.result, { type: 'array' });
+        let wb;
+        try {
+          wb = XLSX.read(e.target.result, { type: 'array', dense: true });
+        } catch (readErr) {
+          throw new Error('엑셀 파일을 읽는 중 오류: ' + (readErr.message || readErr));
+        }
         const picked = pickBestSheet(wb);
         if (!picked) {
           const debug = (pickBestSheet.lastDebug || []).join('\n');
           throw new Error('시트 중에 Time + Gyroscope/Orientation(quaternion)/Yaw-Pitch-Roll 컬럼을 가진 시트를 찾지 못했습니다.\n\n[감지된 시트]\n' + debug);
         }
         const { t, speed } = computeAngSpeedSeries(picked.header, picked.rows);
+        if (!speed || speed.length < 2) throw new Error('센서 데이터 행이 너무 적습니다 (' + (speed ? speed.length : 0) + '행).');
         rawSeries = { t, speed };
         recomputeFromRaw();
       } catch (err) {
-        alert('파일을 처리할 수 없습니다: ' + err.message);
+        reportUploadError(err, file);
       }
     };
+    reader.onerror = () => reportUploadError(new Error('파일을 읽지 못했습니다(FileReader 오류).'), file);
     reader.readAsArrayBuffer(file);
     return;
   }
@@ -830,12 +865,14 @@ function loadUploaded(file) {
     try {
       const { header, rows } = parseCSV(e.target.result);
       const { t, speed } = computeAngSpeedSeries(header, rows);
+      if (!speed || speed.length < 2) throw new Error('센서 데이터 행이 너무 적습니다 (' + (speed ? speed.length : 0) + '행).');
       rawSeries = { t, speed };
       recomputeFromRaw();
     } catch (err) {
-      alert('파일을 처리할 수 없습니다: ' + err.message);
+      reportUploadError(err, file);
     }
   };
+  reader.onerror = () => reportUploadError(new Error('파일을 읽지 못했습니다(FileReader 오류).'), file);
   reader.readAsText(file);
 }
 
@@ -1062,6 +1099,7 @@ function createRibbonViewer(container, opts = {}) {
     const maxHeight = 3;
 
     const n = fineArr.length;
+    if (!Number.isInteger(n) || n < 2 || n > 5000000) return 0; // guard against invalid/huge lengths
     const routePts = useRoute && typeof window.getRoutePath === 'function' ? window.getRoutePath(n) : null;
     let spacing;
     if (fixedTotalLengthM != null) {
