@@ -134,7 +134,7 @@
   .control { display: flex; flex-direction: column; gap: 6px; min-width: 160px; }
   .control label { font-size: 12px; color: var(--text-secondary); }
   .control input[type=range] { width: 100%; }
-  .control input[type=number] {
+  .control input[type=number], .control select {
     width: 100%; padding: 6px 8px; border-radius: 6px;
     border: 1px solid var(--border); background: var(--surface-page); color: var(--text-primary);
     font-size: 13px;
@@ -256,27 +256,35 @@
     <h2>구간 설정</h2>
     <div class="controls">
       <div class="control">
+        <label for="metricSelect">진동 지표</label>
+        <select id="metricSelect">
+          <option value="gyro">각속도 RMS (deg/s) — 자이로/방향</option>
+          <option value="accel">가속도 RMS (m/s²) — ISO 2631-1 승차감</option>
+        </select>
+      </div>
+      <div class="control">
         <label for="speedInput">평균 주행 속도 (km/h) — 1구간(cell) = 10m 환산 기준</label>
         <input type="number" id="speedInput" min="5" max="40" step="0.5" value="12">
         <span class="readout" id="windowReadout"></span>
       </div>
       <div class="control">
-        <label for="goodInput">100점 기준 각속도 RMS (deg/s, 이하면 100점)</label>
-        <input type="number" id="goodInput" min="0" max="100" step="1" value="15">
+        <label for="goodInput">100점 기준 RMS (<span data-unit>deg/s</span>, 이하면 100점)</label>
+        <input type="number" id="goodInput" min="0" step="1" value="15">
       </div>
       <div class="control">
-        <label for="badInput">0점 기준 각속도 RMS (deg/s, 이상이면 0점)</label>
-        <input type="number" id="badInput" min="20" max="400" step="5" value="140">
+        <label for="badInput">0점 기준 RMS (<span data-unit>deg/s</span>, 이상이면 0점)</label>
+        <input type="number" id="badInput" min="0" step="5" value="140">
       </div>
       <div class="control">
-        <label for="spikeInput">충격(스파이크) 감지 임계값 (deg/s, 순간 최대)</label>
-        <input type="number" id="spikeInput" min="50" max="1000" step="10" value="250">
+        <label for="spikeInput">충격(스파이크) 감지 임계값 (<span data-unit>deg/s</span>, 순간 최대)</label>
+        <input type="number" id="spikeInput" min="0" step="10" value="250">
       </div>
       <div class="control">
-        <label for="stationaryInput">정차 판정 임계값 (deg/s, 이하면 정차로 분류)</label>
-        <input type="number" id="stationaryInput" min="0" max="30" step="1" value="8">
+        <label for="stationaryInput">정차 판정 임계값 (<span data-unit>deg/s</span>, 이하면 정차)</label>
+        <input type="number" id="stationaryInput" min="0" step="1" value="8">
       </div>
     </div>
+    <p class="caption" id="metricNote" style="margin-bottom:0">자이로/방향 센서 기반. 노면이 거칠수록 프레임 각속도 변화가 커지는 원리.</p>
   </div>
 
   <div class="card">
@@ -360,9 +368,9 @@
   <div class="card">
     <h2>방법론 &amp; 다음 단계</h2>
     <ul class="roadmap-list">
-      <li><b>지표:</b> phyphox의 방향 센서(quaternion) 또는 자이로스코프 원시값에서 계산한 <b>순간 각속도(deg/s)</b>를 각 구간(cell) 안에서 <b>RMS</b>로 집계 — 노면이 거칠수록 자전거 프레임의 각속도 변화가 커지는 원리를 이용합니다.</li>
-      <li><b>스코어:</b> RMS가 "100점 기준값" 이하면 100점, "0점 기준값" 이상이면 0점, 그 사이는 선형 보간. 기본값은 이번 라이딩 데이터의 분포(중앙값 약 53 deg/s, 90번째 백분위수 약 83 deg/s, 99번째 백분위수 약 138 deg/s)를 참고해 설정했으며, 위 컨트롤에서 직접 조정할 수 있습니다.</li>
-      <li><b>충격 감지:</b> 구간 내 순간 최대 각속도가 임계값을 넘으면 "충격 감지"로 별도 표시 — 균열·단차·맨홀 등 국지적 결함의 후보 지점입니다 (원인 자동 분류는 아직 미구현).</li>
+      <li><b>지표 (2종 전환):</b> ① <b>각속도 RMS(deg/s)</b> — 자이로/방향 센서 기반(내장 샘플이 이 방식). ② <b>가속도 RMS(m/s²)</b> — 가속도 컬럼이 있는 파일을 올리면 활성화되며 <b>ISO 2631-1 승차감 기준</b>으로 채점. 두 방식 모두 구간(cell)마다 RMS로 집계하며, 노면이 거칠수록 값이 커집니다. 가속도+ISO 2631-1 조합은 자전거·킥보드를 프로브로 쓴 선행연구(Cafiso &amp; Di Graziano, 2022)에서 노면상태 KPI로 검증된 방식입니다.</li>
+      <li><b>스코어:</b> RMS가 "100점 기준값" 이하면 100점, "0점 기준값" 이상이면 0점, 그 사이는 선형 보간(0~100). 각속도 기본값은 이번 라이딩 분포(중앙값 약 53, p90 약 83, p99 약 138 deg/s), 가속도 기본값은 <b>ISO 2631-1</b>(0.315 / 1.6 m/s²)을 그대로 사용합니다. 위 컨트롤에서 직접 조정할 수 있습니다.</li>
+      <li><b>충격 감지 (이중검출):</b> 구간 내 순간 최대값이 임계값을 넘으면 "충격 감지"로 별도 표시. 선행연구가 <b>중간 심각도 균열은 RMS 평균, 고심각도 손상·포트홀은 RMS 이상치(outlier)로 검출</b>됨을 보였는데, 우리 "구간 RMS 점수 + 순간 최대 스파이크" 구조가 바로 이 이중검출에 해당합니다 (원인 자동 분류는 미구현).</li>
       <li><b>정차 구간:</b> RMS가 매우 낮은 구간은 "노면이 좋다"가 아니라 신호 대기 등으로 <b>정지해 있었을 가능성</b>이 커서 회색으로 별도 표시하고 평균 계산에서 제외합니다.</li>
       <li><b>알려진 한계 (이번 라이딩):</b> 이번에 주신 파일은 GPS(Location) 센서가 기록되지 않아 실제 지도 좌표에 구간을 매핑하지 못했습니다. 또한 원본이 구형 .xls로 내보내져 65,536행 한도에 걸려 전체 라이딩(약 46분) 중 앞부분 약 10.9분(652초)만 남아있었습니다.</li>
       <li><b>다음 라이딩 촬영 시 권장:</b> phyphox에서 <b>Location(GPS)</b>과 <b>Gyroscope(원시, deg/s)</b> 센서를 함께 켜고, 내보내기는 <b>xls 대신 CSV(zip)</b>로 하면 행 제한 없이 정확한 위치 매핑이 가능합니다.</li>
@@ -375,13 +383,28 @@
 
 <script>
 // ---------- config ----------
+// Two scoring metrics. 'gyro' = angular-speed RMS (deg/s), the built-in sample's basis.
+// 'accel' = vertical/linear-acceleration RMS (m/s²) graded on ISO 2631-1 ride-comfort bands
+//   (< 0.315 not uncomfortable → 100pt ; > 1.6 uncomfortable → 0pt), per Cafiso & Di Graziano
+//   (2022), who confirmed accel-RMS + ISO 2631-1 as the KPI for bike/e-scooter probe pavement
+//   monitoring. The accel metric activates only when an uploaded file carries accelerometer columns.
+const METRIC_PRESETS = {
+  gyro:  { unit: 'deg/s', label: '각속도 RMS', goodRms: 15,    badRms: 140, spikeThreshold: 250, stationaryRms: 8,
+           note: '자이로/방향 센서 기반. 노면이 거칠수록 프레임 각속도 변화가 커지는 원리.' },
+  accel: { unit: 'm/s²',  label: '가속도 RMS (ISO 2631-1)', goodRms: 0.315, badRms: 1.6, spikeThreshold: 3.0, stationaryRms: 0.08,
+           note: 'ISO 2631-1 승차감 기준: <0.315 불편없음(100점), 0.315~0.63 약간, 0.5~1.0 상당히, 0.8~1.6 불편, >1.6 매우불편(0점).' },
+};
+
 let CFG = {
+  metric: 'gyro',
   speedKmh: 12,
+  unit: METRIC_PRESETS.gyro.unit,
   goodRms: 15,
   badRms: 140,
   spikeThreshold: 250,
   stationaryRms: 8,
 };
+function U() { return CFG.unit; }
 
 const STATUS = [
   { key: 'critical',   label: '위험',  min: 0,  max: 25,  color: 'var(--status-critical)' },
@@ -493,6 +516,57 @@ function computeAngSpeedSeries(header, rows) {
   }
 
   throw new Error('인식 가능한 센서 컬럼이 없습니다 (Gyroscope, Orientation quaternion, Yaw/Pitch/Roll 중 하나 필요).');
+}
+
+// Vertical/linear acceleration RMS series (m/s²) — ISO 2631-1 metric.
+// phyphox "Linear Acceleration" already removes gravity; plain "Accelerometer" includes it,
+// so we subtract the per-window mean (≈ gravity + slow tilt) to isolate the road-induced motion.
+function computeAccelSeries(header, rows) {
+  const tCol = findCol(header, ['time']);
+  if (tCol === -1) throw new Error('시간(Time) 컬럼을 찾을 수 없습니다.');
+  const t = rows.map(r => r[tCol]);
+
+  const isLinear = header.some(h => h.includes('linear'));
+  const axCol = findCol(header, ['linear acceleration x', 'acceleration x', 'accelerometer x', 'ax', 'a_x']);
+  const ayCol = findCol(header, ['linear acceleration y', 'acceleration y', 'accelerometer y', 'ay', 'a_y']);
+  const azCol = findCol(header, ['linear acceleration z', 'acceleration z', 'accelerometer z', 'az', 'a_z']);
+  if (axCol === -1 || ayCol === -1 || azCol === -1) return null; // no accel columns
+
+  // Prefer the vertical (z) axis if plausibly vertical; otherwise fall back to magnitude.
+  // Remove a slow-moving baseline (mean over a ~2s sliding window) to drop the gravity/DC term.
+  const dtAvg = (t[t.length - 1] - t[0]) / Math.max(1, t.length - 1) || 0.01;
+  const win = Math.max(5, Math.round(2 / dtAvg));
+  const az = rows.map(r => r[azCol]);
+  const mag = rows.map(r => Math.sqrt(r[axCol] ** 2 + r[ayCol] ** 2 + r[azCol] ** 2));
+  const src = isLinear ? az : mag; // linear-accel z is already gravity-free
+  const out = [];
+  for (let i = 0; i < src.length; i++) {
+    let s = 0, c = 0;
+    for (let j = Math.max(0, i - win); j <= Math.min(src.length - 1, i + win); j++) { s += src[j]; c++; }
+    out.push(Math.abs(src[i] - s / c)); // deviation from local baseline
+  }
+  return { t, speed: out };
+}
+
+// Dispatcher used by uploads: honor the selected metric, but gracefully fall back.
+function computeSensorSeries(header, rows) {
+  if (CFG.metric === 'accel') {
+    const a = computeAccelSeries(header, rows);
+    if (a) return a;
+    // requested accel but file has none → fall back to angular, tell the user
+    const s = computeAngSpeedSeries(header, rows);
+    setMetric('gyro', { silent: true });
+    alert('가속도(ISO 2631-1) 지표를 선택했지만 이 파일에 가속도 컬럼이 없어 각속도 지표로 표시합니다.\nphyphox에서 Accelerometer 또는 Linear Acceleration 센서를 함께 내보내면 가속도 기반 평가가 가능합니다.');
+    return s;
+  }
+  // gyro metric: try angular first, but if only accel columns exist, use them and switch metric
+  try {
+    return computeAngSpeedSeries(header, rows);
+  } catch (e) {
+    const a = computeAccelSeries(header, rows);
+    if (a) { setMetric('accel', { silent: true }); return a; }
+    throw e;
+  }
 }
 
 function bucketIntoCells(t, speed, windowSec) {
@@ -660,7 +734,7 @@ function renderStrip(records) {
       tooltip.style.left = (e.clientX + 14) + 'px';
       tooltip.style.top = (e.clientY + 14) + 'px';
       tooltip.innerHTML = `구간 #${r.idx} · ${r.distM}m 지점<br>
-        RMS ${fmtNum(r.rms,1)} deg/s · 최대 ${fmtNum(r.peak,1)} deg/s<br>
+        RMS ${fmtNum(r.rms,2)} ${U()} · 최대 ${fmtNum(r.peak,2)} ${U()}<br>
         ${r.stationary ? '정차 구간 (평가 제외)' : `스코어 ${r.score}점 (${r.status.label})`}
         ${r.flagged ? '<br><b>⚠ 충격 감지</b>' : ''}`;
     });
@@ -693,7 +767,7 @@ function renderChart(records) {
             title: (items) => `${records[items[0].dataIndex].distM}m 지점 (구간 #${items[0].dataIndex})`,
             label: (item) => {
               const r = records[item.dataIndex];
-              return r.stationary ? '정차 구간' : `스코어 ${r.score}점 · RMS ${fmtNum(r.rms,1)} deg/s`;
+              return r.stationary ? '정차 구간' : `스코어 ${r.score}점 · RMS ${fmtNum(r.rms,2)} ${U()}`;
             }
           }
         }
@@ -720,8 +794,8 @@ function renderTables(records) {
       <td>#${r.idx}</td>
       <td class="num">${r.distM}m</td>
       <td class="num">${fmtNum(r.t0,1)}s</td>
-      <td class="num">${fmtNum(r.rms,1)}</td>
-      <td class="num">${fmtNum(r.peak,1)}</td>
+      <td class="num">${fmtNum(r.rms, CFG.metric === 'accel' ? 3 : 1)}</td>
+      <td class="num">${fmtNum(r.peak, CFG.metric === 'accel' ? 3 : 1)}</td>
       <td class="num">${r.score ?? '—'}</td>
       <td>${badgeHtml(r)}</td>
       <td>${r.flagged ? '⚠ 감지' : ''}</td>
@@ -729,7 +803,7 @@ function renderTables(records) {
 
   const headHtml = `<tr>
       <th>구간</th><th class="num">거리</th><th class="num">시간</th>
-      <th class="num">RMS(deg/s)</th><th class="num">최대(deg/s)</th>
+      <th class="num">RMS(${U()})</th><th class="num">최대(${U()})</th>
       <th class="num">스코어</th><th>등급</th><th>충격</th>
     </tr>`;
 
@@ -847,7 +921,7 @@ function loadUploaded(file) {
           const debug = (pickBestSheet.lastDebug || []).join('\n');
           throw new Error('시트 중에 Time + Gyroscope/Orientation(quaternion)/Yaw-Pitch-Roll 컬럼을 가진 시트를 찾지 못했습니다.\n\n[감지된 시트]\n' + debug);
         }
-        const { t, speed } = computeAngSpeedSeries(picked.header, picked.rows);
+        const { t, speed } = computeSensorSeries(picked.header, picked.rows);
         if (!speed || speed.length < 2) throw new Error('센서 데이터 행이 너무 적습니다 (' + (speed ? speed.length : 0) + '행).');
         rawSeries = { t, speed };
         recomputeFromRaw();
@@ -864,7 +938,7 @@ function loadUploaded(file) {
   reader.onload = (e) => {
     try {
       const { header, rows } = parseCSV(e.target.result);
-      const { t, speed } = computeAngSpeedSeries(header, rows);
+      const { t, speed } = computeSensorSeries(header, rows);
       if (!speed || speed.length < 2) throw new Error('센서 데이터 행이 너무 적습니다 (' + (speed ? speed.length : 0) + '행).');
       rawSeries = { t, speed };
       recomputeFromRaw();
@@ -915,6 +989,36 @@ bindControl('goodInput', 'goodRms');
 bindControl('badInput', 'badRms');
 bindControl('spikeInput', 'spikeThreshold');
 bindControl('stationaryInput', 'stationaryRms');
+
+// Switch scoring metric (gyro deg/s vs accel m/s² on ISO 2631-1 bands).
+// Loads that metric's default thresholds and unit, updates the input fields + labels, re-renders.
+function setMetric(name, opts = {}) {
+  const p = METRIC_PRESETS[name];
+  if (!p) return;
+  CFG.metric = name;
+  CFG.unit = p.unit;
+  CFG.goodRms = p.goodRms;
+  CFG.badRms = p.badRms;
+  CFG.spikeThreshold = p.spikeThreshold;
+  CFG.stationaryRms = p.stationaryRms;
+  // reflect into number inputs + step sizes (accel needs fine steps)
+  const step = name === 'accel' ? '0.01' : '1';
+  ['goodInput','badInput','spikeInput','stationaryInput'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.step = step;
+  });
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('goodInput', p.goodRms); set('badInput', p.badRms);
+  set('spikeInput', p.spikeThreshold); set('stationaryInput', p.stationaryRms);
+  // update unit labels
+  document.querySelectorAll('[data-unit]').forEach(el => { el.textContent = p.unit; });
+  const sel = document.getElementById('metricSelect'); if (sel && sel.value !== name) sel.value = name;
+  const mn = document.getElementById('metricNote'); if (mn) mn.textContent = p.note;
+  if (!opts.silent) refreshCurrent();
+}
+{
+  const sel = document.getElementById('metricSelect');
+  if (sel) sel.addEventListener('change', (e) => setMetric(e.target.value));
+}
 
 function refreshCurrent() {
   document.getElementById('windowReadout').textContent =
@@ -1016,7 +1120,7 @@ function updateScanReadout(cellIdx) {
   if (!r) { el.textContent = '유효하지 않은 구간 번호입니다.'; return; }
   el.textContent = r.stationary
     ? `#${cellIdx} · ${r.distM}m 지점 · 정차 구간`
-    : `#${cellIdx} · ${r.distM}m 지점 · 스코어 ${r.score}점 (${r.status.label}) · RMS ${fmtNum(r.rms,1)} deg/s`;
+    : `#${cellIdx} · ${r.distM}m 지점 · 스코어 ${r.score}점 (${r.status.label}) · RMS ${fmtNum(r.rms,2)} ${U()}`;
 }
 
 function loadScanCell(cellIdx) {
