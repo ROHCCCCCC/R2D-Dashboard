@@ -334,6 +334,7 @@
     <div class="map-toolbar">
       <label class="chk"><input type="checkbox" id="bikelaneToggle" checked> 공식 지정 자전거도로 (경기데이터드림)</label>
       <label class="chk"><input type="checkbox" id="complaintToggle" checked> 민원/신고 표시</label>
+      <label class="chk"><input type="checkbox" id="accidentToggle"> 자전거 사고다발지역 (도로교통공단)</label>
       <button type="button" id="reportModeBtn" class="btn-report">📍 신고 모드 켜기</button>
       <button type="button" id="exportReportsBtn" class="btn-ghost">신고 내보내기(CSV)</button>
       <button type="button" id="clearReportsBtn" class="btn-ghost">신고 초기화</button>
@@ -706,6 +707,47 @@ function renderMap(records) {
   leafletLayer = group;
   leafletMap.fitBounds(L.latLngBounds(path.map(p => [p.lat, p.lon])), { padding: [20, 20] });
   renderComplaintLayer();
+  renderAccidentLayer();
+}
+
+// ---------- 자전거 사고다발지역 참고 레이어 (도로교통공단, 2015~2020) ----------
+// 개별사고 정보(15094182)의 수원 지점명을 동(洞) 단위로 지오코딩·집계. 사고 '기록'이지
+// 민원이 아니며, 동 중심 근사 좌표라 실제 사고지점과는 수십~수백m 오차가 있을 수 있음.
+// 경로(영통~수지)와는 도심(팔달·장안·권선)이 떨어져 있어, 지도를 축소하면 함께 보인다.
+const ACCIDENT_HOTSPOTS = [
+  ['장안구 영화동', 37.29275, 127.01361, 25], ['장안구 정자동', 37.2966073, 126.9928359, 18],
+  ['장안구 송죽동', 37.3033091, 127.0008226, 14], ['팔달구 남수동', 37.28309, 127.02174, 11],
+  ['팔달구 북수동', 37.28582, 127.01644, 10], ['권선구 권선동', 37.2508559, 127.0307889, 10],
+  ['팔달구 우만동', 37.28433, 127.03279, 9], ['권선구 세류동', 37.25715, 127.01241, 9],
+  ['팔달구 지동', 37.28217, 127.02477, 8], ['팔달구 인계동', 37.268208, 127.0293802, 8],
+  ['팔달구 중동', 37.27395, 127.01638, 5], ['팔달구 매교동', 37.2678861, 127.0165984, 5],
+  ['팔달구 화서동', 37.2811, 126.99961, 4], ['팔달구 매산로2가', 37.26818, 127.00505, 4],
+  ['장안구 조원동', 37.3039794, 127.0122244, 4],
+];
+let accidentLayer = null;
+function renderAccidentLayer() {
+  if (typeof L === 'undefined' || !leafletMap) return;
+  if (accidentLayer) { leafletMap.removeLayer(accidentLayer); accidentLayer = null; }
+  accidentLayer = L.layerGroup();
+  for (const [name, lat, lon, cnt] of ACCIDENT_HOTSPOTS) {
+    const m = L.circleMarker([lat, lon], {
+      radius: 6 + Math.sqrt(cnt) * 2, color: resolveVar('var(--status-serious)'),
+      weight: 2, fillColor: resolveVar('var(--status-serious)'), fillOpacity: 0.35,
+    });
+    m.bindTooltip(`자전거 사고다발 · ${name}<br>사고 ${cnt}건 (2015~2020, 도로교통공단)`, { sticky: true });
+    accidentLayer.addLayer(m);
+  }
+  const t = document.getElementById('accidentToggle');
+  if (t && t.checked) accidentLayer.addTo(leafletMap);
+}
+{
+  const t = document.getElementById('accidentToggle');
+  if (t) t.addEventListener('change', (e) => {
+    if (!leafletMap) return;
+    if (!accidentLayer) renderAccidentLayer();
+    if (!accidentLayer) return;
+    if (e.target.checked) accidentLayer.addTo(leafletMap); else leafletMap.removeLayer(accidentLayer);
+  });
 }
 
 // ---------- 민원/신고 레이어 (citizen reports) ----------
