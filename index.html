@@ -238,7 +238,20 @@
   }
 
   #map2d { height: 420px; border-radius: 8px; border: 1px solid var(--border); }
+  #map2d.report-mode { cursor: crosshair; }
   .leaflet-tooltip { font-size: 12px; }
+
+  .map-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 8px; font-size: 12px; color: var(--text-secondary); }
+  .map-toolbar .chk { display: flex; align-items: center; gap: 6px; }
+  .map-toolbar button { font-size: 12px; padding: 5px 10px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); }
+  .btn-report { background: var(--series-1); color: #fff; border-color: var(--series-1) !important; }
+  .btn-report.active { background: var(--status-critical); border-color: var(--status-critical) !important; }
+  .btn-ghost { background: var(--surface-page); color: var(--text-primary); }
+  .report-popup { font-size: 13px; min-width: 180px; }
+  .report-popup select, .report-popup input, .report-popup textarea { width: 100%; margin: 4px 0; padding: 5px 6px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface-page); color: var(--text-primary); font-size: 13px; box-sizing: border-box; }
+  .report-popup .row { display: flex; gap: 6px; margin-top: 6px; }
+  .report-popup button { flex: 1; font-size: 12px; padding: 6px; border-radius: 5px; cursor: pointer; border: 1px solid var(--border); }
+  .report-popup .save { background: var(--series-1); color: #fff; border-color: var(--series-1); }
 
   .roadmap-list { font-size: 13px; color: var(--text-secondary); line-height: 1.9; margin: 0; padding-left: 18px; }
   .roadmap-list b { color: var(--text-primary); }
@@ -318,10 +331,21 @@
       실제 라이딩 경로(구글 지도 캡처 기준 동수원 → 성복, 약 9km, 자전거도로 94%)와 정확히 일치하지 않으니 <b>구간별 위치는 참고용</b>으로만 봐주세요. GPS 로그가 생기면 실제 경로로 교체됩니다.
     </p>
     <p class="caption" id="bikelaneCaption"></p>
-    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); margin-bottom:10px;">
-      <input type="checkbox" id="bikelaneToggle" checked> 공식 지정 자전거도로 표시 (경기데이터드림, 수원시)
-    </label>
+    <div class="map-toolbar">
+      <label class="chk"><input type="checkbox" id="bikelaneToggle" checked> 공식 지정 자전거도로 (경기데이터드림)</label>
+      <label class="chk"><input type="checkbox" id="complaintToggle" checked> 민원/신고 표시</label>
+      <button type="button" id="reportModeBtn" class="btn-report">📍 신고 모드 켜기</button>
+      <button type="button" id="exportReportsBtn" class="btn-ghost">신고 내보내기(CSV)</button>
+      <button type="button" id="clearReportsBtn" class="btn-ghost">신고 초기화</button>
+      <span class="readout" id="reportCount"></span>
+    </div>
+    <p class="caption" id="reportHint" style="margin:0 0 8px; display:none;">신고 모드: 지도에서 문제 지점을 클릭하면 신고할 수 있습니다. 신고는 이 브라우저에 저장되며, CSV로 내보내 지자체에 제출할 수 있습니다.</p>
     <div id="map2d"></div>
+    <p class="caption" id="complaintNote" style="margin-top:8px">
+      <b>민원/신고 레이어:</b> 라이더·시민이 앱에서 직접 올린 신고를 지도에 표시합니다(브라우저 로컬 저장, 백엔드 불필요).
+      진동 스코어가 낮은 구간과 신고가 겹치면 <b>Crowd Validation(교차검증)</b>이 됩니다.
+      지자체 접수 민원의 실시간 API 연동(안전신문고 등)은 별도 백엔드가 필요해 다음 단계(로드맵)로 둡니다.
+    </p>
   </div>
 
   <div class="card">
@@ -374,6 +398,7 @@
       <li><b>정차 구간:</b> RMS가 매우 낮은 구간은 "노면이 좋다"가 아니라 신호 대기 등으로 <b>정지해 있었을 가능성</b>이 커서 회색으로 별도 표시하고 평균 계산에서 제외합니다.</li>
       <li><b>알려진 한계 (이번 라이딩):</b> 이번에 주신 파일은 GPS(Location) 센서가 기록되지 않아 실제 지도 좌표에 구간을 매핑하지 못했습니다. 또한 원본이 구형 .xls로 내보내져 65,536행 한도에 걸려 전체 라이딩(약 46분) 중 앞부분 약 10.9분(652초)만 남아있었습니다.</li>
       <li><b>다음 라이딩 촬영 시 권장:</b> phyphox에서 <b>Location(GPS)</b>과 <b>Gyroscope(원시, deg/s)</b> 센서를 함께 켜고, 내보내기는 <b>xls 대신 CSV(zip)</b>로 하면 행 제한 없이 정확한 위치 매핑이 가능합니다.</li>
+      <li><b>민원/신고 &amp; Crowd Validation:</b> 지도에서 "신고 모드"로 시민·라이더가 문제 지점을 직접 신고하면 브라우저에 저장되고 지도에 표시되며, 진동 스코어가 낮은 구간과 겹치는 신고는 <b>교차검증(빨간 핀)</b>으로 강조됩니다. 신고는 CSV로 내보내 지자체에 제출할 수 있습니다. <b>지자체 접수 민원의 실시간 API 연동(안전신문고 등)</b>은 브라우저 직접 호출이 CORS로 막히고 24시간 폴링 서버가 필요해, 별도 백엔드를 두는 다음 단계로 계획합니다. 수원·용인 등 경로 지역의 민원 데이터는 공개 다운로드가 제한적이라(개인정보), 확보되는 대로 <code>EMBEDDED_COMPLAINTS</code> 레이어로 바로 반영할 수 있게 구조를 열어뒀습니다.</li>
       <li><b>3D 스캐닝(예정):</b> 자이로 데이터 + 추후 제공하실 도로 사진을 결합해 노면을 3D로 복원하는 기능은 이번 MVP 범위에는 포함하지 않았습니다. 사진/영상 데이터가 준비되면 별도로 설계가 필요합니다.</li>
     </ul>
   </div>
@@ -680,7 +705,136 @@ function renderMap(records) {
   group.addTo(leafletMap);
   leafletLayer = group;
   leafletMap.fitBounds(L.latLngBounds(path.map(p => [p.lat, p.lon])), { padding: [20, 20] });
+  renderComplaintLayer();
 }
+
+// ---------- 민원/신고 레이어 (citizen reports) ----------
+// Stored in browser localStorage (no backend). Optional embedded dataset can be merged in later:
+//   window.EMBEDDED_COMPLAINTS = [{lat, lon, type, note, date, source}]  ← e.g. 지자체 데이터
+const REPORT_TYPES = ['포트홀/구멍', '균열', '단차/턱', '맨홀', '장애물', '기타'];
+const STORE_KEY = 'roadpulse_reports_v1';
+let complaintLayer = null, reportMode = false;
+
+function loadReports() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); } catch (e) { return []; }
+}
+function saveReports(arr) { localStorage.setItem(STORE_KEY, JSON.stringify(arr)); }
+function allComplaints() {
+  const embedded = Array.isArray(window.EMBEDDED_COMPLAINTS) ? window.EMBEDDED_COMPLAINTS : [];
+  return embedded.concat(loadReports());
+}
+
+function nearestCellInfo(lat, lon) {
+  // find the route cell whose mapped point is closest, to cross-reference the score
+  if (!currentRecords.length || typeof window.getRoutePath !== 'function') return null;
+  const path = window.getRoutePath(currentRecords.length);
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < path.length; i++) {
+    const d = (path[i].lat - lat) ** 2 + (path[i].lon - lon) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  const r = currentRecords[best];
+  if (!r) return null;
+  // ~1e-4 deg ≈ 11m; only call it a match if reasonably close
+  const approxM = Math.sqrt(bestD) * 111000;
+  return { cell: r, distM: Math.round(approxM) };
+}
+
+function renderComplaintLayer() {
+  if (typeof L === 'undefined' || !leafletMap) return;
+  if (complaintLayer) { leafletMap.removeLayer(complaintLayer); complaintLayer = null; }
+  const items = allComplaints();
+  const toggle = document.getElementById('complaintToggle');
+  const cnt = document.getElementById('reportCount');
+  if (cnt) cnt.textContent = `신고 ${loadReports().length}건` + (window.EMBEDDED_COMPLAINTS ? ` (+공공 ${window.EMBEDDED_COMPLAINTS.length})` : '');
+  if (!items.length) return;
+  complaintLayer = L.layerGroup();
+  for (const c of items) {
+    const near = nearestCellInfo(c.lat, c.lon);
+    const validated = near && !near.cell.stationary && near.cell.score < 50 && near.distM < 40;
+    const m = L.circleMarker([c.lat, c.lon], {
+      radius: 7, color: '#fff', weight: 2,
+      fillColor: validated ? resolveVar('var(--status-critical)') : resolveVar('var(--series-1)'),
+      fillOpacity: 0.9,
+    });
+    const nearTxt = near ? `<br>가까운 구간 #${near.cell.idx} · ${near.distM}m · ${near.cell.stationary ? '정차' : '스코어 ' + near.cell.score + '점'}` : '';
+    m.bindPopup(
+      `<div class="report-popup"><b>${c.type || '신고'}</b>${c.source ? ` <span style="color:#888">(${c.source})</span>` : ''}` +
+      `${c.note ? '<br>' + c.note.replace(/</g, '&lt;') : ''}` +
+      `<br><span style="color:#888">${c.date || ''}</span>${nearTxt}` +
+      (validated ? '<br>✅ <b>진동 이상치와 일치(교차검증)</b>' : '') +
+      (c.id ? `<div class="row"><button onclick="deleteReport('${c.id}')">삭제</button></div>` : '') +
+      `</div>`
+    );
+    complaintLayer.addLayer(m);
+  }
+  if (!toggle || toggle.checked) complaintLayer.addTo(leafletMap);
+}
+
+function openReportForm(latlng) {
+  const opts = REPORT_TYPES.map(t => `<option value="${t}">${t}</option>`).join('');
+  const html =
+    `<div class="report-popup">` +
+    `<b>노면 문제 신고</b>` +
+    `<select id="rpType">${opts}</select>` +
+    `<textarea id="rpNote" rows="2" placeholder="상세 내용(선택)"></textarea>` +
+    `<div class="row"><button class="save" onclick="submitReport(${latlng.lat},${latlng.lng})">신고 저장</button></div>` +
+    `</div>`;
+  L.popup({ minWidth: 200 }).setLatLng(latlng).setContent(html).openOn(leafletMap);
+}
+
+window.submitReport = function (lat, lon) {
+  const type = (document.getElementById('rpType') || {}).value || '기타';
+  const note = (document.getElementById('rpNote') || {}).value || '';
+  const arr = loadReports();
+  arr.push({ id: 'r' + Date.now(), lat, lon, type, note, date: new Date().toISOString().slice(0, 16).replace('T', ' '), source: '앱 신고' });
+  saveReports(arr);
+  leafletMap.closePopup();
+  renderComplaintLayer();
+};
+window.deleteReport = function (id) {
+  saveReports(loadReports().filter(r => r.id !== id));
+  leafletMap.closePopup();
+  renderComplaintLayer();
+};
+
+document.getElementById('complaintToggle').addEventListener('change', (e) => {
+  if (!leafletMap || !complaintLayer) { renderComplaintLayer(); return; }
+  if (e.target.checked) complaintLayer.addTo(leafletMap); else leafletMap.removeLayer(complaintLayer);
+});
+document.getElementById('reportModeBtn').addEventListener('click', () => {
+  reportMode = !reportMode;
+  const btn = document.getElementById('reportModeBtn');
+  const hint = document.getElementById('reportHint');
+  const mapEl = document.getElementById('map2d');
+  btn.classList.toggle('active', reportMode);
+  btn.textContent = reportMode ? '📍 신고 모드 끄기' : '📍 신고 모드 켜기';
+  if (hint) hint.style.display = reportMode ? 'block' : 'none';
+  if (mapEl) mapEl.classList.toggle('report-mode', reportMode);
+  if (leafletMap) {
+    if (reportMode) leafletMap.on('click', onMapReportClick);
+    else leafletMap.off('click', onMapReportClick);
+  }
+});
+function onMapReportClick(e) { openReportForm(e.latlng); }
+
+document.getElementById('clearReportsBtn').addEventListener('click', () => {
+  if (!loadReports().length) { alert('저장된 신고가 없습니다.'); return; }
+  if (confirm('이 브라우저에 저장된 신고를 모두 삭제할까요? (되돌릴 수 없습니다)')) {
+    saveReports([]); renderComplaintLayer();
+  }
+});
+document.getElementById('exportReportsBtn').addEventListener('click', () => {
+  const arr = loadReports();
+  if (!arr.length) { alert('내보낼 신고가 없습니다. 먼저 신고 모드로 지점을 등록하세요.'); return; }
+  const head = 'id,date,type,lat,lon,note,source\n';
+  const body = arr.map(r => [r.id, r.date, r.type, r.lat, r.lon, '"' + (r.note || '').replace(/"/g, '""') + '"', r.source].join(',')).join('\n');
+  const blob = new Blob(['﻿' + head + body], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'roadpulse_민원신고.csv';
+  a.click();
+});
 
 function renderNotice(meta) {
   const el = document.getElementById('dataNotice');
